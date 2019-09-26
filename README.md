@@ -1,7 +1,7 @@
-TITLE
+SUBWAYSPEAK
 ===
 
-Lewis, M. & XX. (in prep). TITLE. <!-- [[preprint]](writeup/journal/iat_lang.pdf) [[source]](writeup/journal/iat_lang.Rmd) [[supplemental materials]](https://mollylewis.shinyapps.io/iatlang_SI/). -->
+ <!-- Lewis, M. & XX. (in prep). TITLE.[[preprint]](writeup/journal/iat_lang.pdf) [[source]](writeup/journal/iat_lang.Rmd) [[supplemental materials]](https://mollylewis.shinyapps.io/iatlang_SI/). -->
 
 <!-- 
 In this project,... 
@@ -11,4 +11,4 @@ Below is a key figure from the paper.-->
 
 
 
-Feel free to email me with questions and comments at mollyllewis@gmail.com.
+ <!-- Feel free to email me with questions and comments at mollyllewis@gmail.com. -->

@@ -7,7 +7,8 @@
 .Rhistory
 .httr-oauth
 *_cache/*
-
+exploratory_analyses/study1/data/tidy_reviews.csv
+exploratory_analyses/study1/data/reviews/*
 
 *.log
 

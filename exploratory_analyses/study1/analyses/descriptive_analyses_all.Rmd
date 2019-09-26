@@ -1,0 +1,326 @@
+---
+title: Descriptive Analyses of Google Review Data
+subtitle: All reviews
+author: Molly Lewis 
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    theme: cerulean
+    toc_float: true
+    code_folding: hide
+---
+  
+
+```{r setup, include = F}
+# load packages
+library(tidyverse) 
+library(knitr)
+library(ggmap)
+library(rmarkdown)
+library(feather)
+source("make_corr_plot.R")
+
+
+opts_chunk$set(echo = T, message = F, warning = F, 
+               error = F, tidy = F,  cache = F, fig.height = 4)
+theme_set(theme_classic(base_size = 12))
+```  
+
+```{r}
+PLACE_ID_PATH <- "../data/place_ids/"
+place_id_files <- list.files(PLACE_ID_PATH, 
+                             full.names = T)
+place_id_meta <- map_df(place_id_files, read_feather) %>%
+  rename(city = location) %>%
+  distinct(city, lat, lon)
+
+
+REVIEW_PATH <- "../data/tidy_reviews.csv"
+tidy_review_df <- read_csv(REVIEW_PATH) %>%
+  select(city, name, review_num, review_tidy) %>%
+  group_by(city, name) %>%
+  distinct(review_tidy, .keep_all = T) %>%
+  ungroup() %>%
+  left_join(place_id_meta) %>%
+  filter(!is.na(city)) %>%
+  mutate(review_length = nchar(review_tidy))
+
+```
+
+
+# Reviews
+The dataset includes  `r nrow(tidy_review_df)` Google reviews from `r length(unique(tidy_review_df$city))` cities in Iowa (city list taken from Wikipedia). The reviews were collected in the summer of 2017 using the  Google Maps APIs (through `googleway` R package). We identified all place_ids (business) within 5000 m (~3mi) of each town, and then collected 200 pages of reviews (20/page) for each place_id.
+
+Here's a sample of the reviews:
+```{r}
+
+tidy_review_df %>%
+  slice(1:20) %>%
+  pull(review_tidy)
+```
+
+
+
+## Number of reviews{.tabset}
+
+### By establishment name 
+(e.g., "Subway")
+```{r}
+total_reviews <- count(tidy_review_df,  name) %>%
+  arrange(-n)
+
+total_reviews %>%
+  ggplot(aes(x = n)) +
+  geom_histogram(binwidth = 5) 
+
+total_reviews %>%
+  slice(1:10) %>%
+  kable()
+```
+
+### By city 
+```{r}
+n_reviews_by_city <- tidy_review_df %>%
+  count(city, lat, lon) %>%
+  mutate(log_n_reviews = log(n)) %>%
+  ungroup()
+
+ggplot(n_reviews_by_city, aes(x = n)) +
+  geom_histogram(binwidth = 10) 
+
+n_reviews_by_city %>%
+  arrange(-n) %>%
+  slice(1:10) %>%
+  kable()
+```
+
+### By city - geographical distribution
+```{r, fig.height = 6}
+iowa_bounding_box = c(-96.6397171020508,
+                      40.3755989074707, # southwest coordinates
+                      -90.1400604248047, 
+                      43.5011367797852) # northeast coordinates
+
+#iowa_map <- get_stamenmap(iowa_bounding_box, 
+#                     zoom = 5, 
+#                     maptype = "toner-lite")
+
+#ggmap(iowa_map) +
+#  geom_point(aes(x = lon, y = lat, size = log(n)), 
+ #            data = n_reviews_by_city, alpha = .1, color = "red") +
+ # theme_bw()
+
+
+DESMOINES_LAT_LON <- c(-93.6091064,41.6005448)
+iowa_map2 <- get_googlemap(center = DESMOINES_LAT_LON, 
+                     zoom = 7, 
+                     maptype = "roadmap")
+
+ggmap(iowa_map2, extent = 
+        "device") +
+  geom_point(aes(x = lon, y = lat, color = log(n)), 
+             data = n_reviews_by_city, alpha = .5, size = 4) +
+    viridis::scale_color_viridis(direction = -1) +
+  theme_bw()
+```
+
+
+
+## Review language measures{.tabset}
+
+### Length
+```{r}
+tidy_review_df %>%
+  ggplot(aes(x = review_length)) +
+  xlab("Review length (characters)") +
+  geom_histogram(binwidth = 10) 
+```
+
+### Length - geographic distribution by city
+```{r, fig.height = 6}
+review_length_by_city <- tidy_review_df %>%
+  group_by(city, lat, lon) %>%
+  summarize(log_mean_review_length = log(mean(review_length))) %>%
+  ungroup()
+
+ggmap(iowa_map2, extent = 
+        "device") +
+  geom_point(aes(x = lon, y = lat, color = log_mean_review_length), 
+             data = review_length_by_city, alpha = .5, size = 4) +
+    viridis::scale_color_viridis(direction = -1) +
+  theme_bw()
+```
+
+### Entropy
+Using NSB measure (bits). Note that only a third have entropy measures that are calculated (why?). 
+
+* Should zeros for words not in reviews be included?
+* Should we treat each city as a corpus?
+```{r}
+ENTROPY_PATH <- "../data/review_nsb_entropy.csv"
+
+review_entropy <- read_csv(ENTROPY_PATH,
+                           col_names = c("review_num",
+                                         "entropy_bits"))  %>%
+  right_join(tidy_review_df) %>%
+  filter(!is.na(entropy_bits))
+
+review_entropy %>%
+  ggplot(aes(x = entropy_bits)) +
+  xlab("Word Entropy (bits)") +
+  geom_histogram()
+```
+
+### Entropy - geographic distribution by city
+
+```{r, fig.height = 6}
+entropy_by_city <- review_entropy %>%
+  group_by(city, lat, lon) %>%
+  summarize(mean_entropy_bits = mean(entropy_bits)) %>%
+  ungroup()
+
+ggmap(iowa_map2, extent = 
+        "device") +
+  geom_point(aes(x = lon, y = lat, color = mean_entropy_bits), 
+             data = entropy_by_city, alpha = .5, size = 4) +
+    viridis::scale_color_viridis(direction = -1) +
+  theme_bw()
+```
+
+### Sentiment
+Using the [Affin](http://www2.imm.dtu.dk/pubdb/views/publication_details.php?id=6010) dataset.
+
+```{r}
+SENTIMENT_PATH <- "../data/review_sentiment.csv"
+
+review_sentiment <- read_csv(SENTIMENT_PATH)   %>%
+  right_join(tidy_review_df)
+
+review_sentiment %>%
+  ggplot(aes(x = sentiment_score_afinn)) +
+  xlab("Review Sentiment") +
+  geom_histogram()
+```
+
+### Sentiment - geographic distribution by city
+
+```{r, fig.height = 6}
+sentiment_by_city <- review_sentiment %>%
+  right_join(tidy_review_df %>% select(review_num, city, lat, lon)) %>%
+  group_by(city, lat, lon) %>%
+  summarize(mean_sentiment_score_afinn = mean(sentiment_score_afinn, na.rm = T)) %>%
+  ungroup()
+
+ggmap(iowa_map2, extent = 
+        "device") +
+  geom_point(aes(x = lon, y = lat, color = mean_sentiment_score_afinn), 
+             data = sentiment_by_city, alpha = .5, size = 4) +
+    viridis::scale_color_viridis(direction = -1) +
+  theme_bw()
+```
+
+# Social Variables {.tabset}
+## Population demographics
+Using census data (`acm` package).
+```{r, fig.height = 6}
+CENSUS_DATA_PATH <- "../data/census_data.csv"
+census_data <- read_csv(CENSUS_DATA_PATH) %>%
+  mutate( log_prop_pop_hisp = log(pophisp/pop),
+          prop_pop_white = popwhite/pop,
+          log_pop = log(pop)) %>%
+  select(-pophisp, -pop, -popwhite) %>%
+  rename(median_income = medianincome) %>%
+  left_join(place_id_meta)
+
+census_data %>%
+  select(-lat, -lon) %>%
+  gather(measure, value, -city) %>%
+  ggplot(aes(x = value)) +
+  facet_wrap(~measure, scales = "free") +
+  geom_histogram() 
+```
+
+## Population demographics - geographic
+```{r, fig.height = 6}
+ggmap(iowa_map2, extent = 
+        "device") +
+  geom_point(aes(x = lon, y = lat, color = median_income), size = 4, 
+             data = census_data, alpha = .5) +
+  viridis::scale_color_viridis(direction = -1) +
+  theme_bw()
+
+ggmap(iowa_map2, extent = 
+        "device") +
+  geom_point(aes(x = lon, y = lat, color = log_pop), size = 4, 
+             data = census_data, alpha = .5) +
+  viridis::scale_color_viridis(direction = -1) +
+  theme_bw()
+
+ggmap(iowa_map2, extent = 
+        "device") +
+  geom_point(aes(x = lon, y = lat, color = log_prop_pop_hisp), size = 4, 
+             data = census_data, alpha = .5) +
+  viridis::scale_color_viridis(direction = -1) +
+  theme_bw()
+```
+
+## Exit distance
+Exits identified using OpenStreetMap API (`osmdata` package; "motorway_junction"). I then calculated minimum distance from each city to an exit as the crow flies ("Haversine distance"). Driving time would be preferable here. 
+
+```{r}
+DISTANCE_TO_EXIT <- "../data/distance_to_exit.csv"
+exit_distance <- read_csv(DISTANCE_TO_EXIT)  %>%
+  mutate(log_min_distance_to_exit_meters = log(min_distance_to_exit_meters)) %>%
+  left_join(place_id_meta)
+
+exit_distance %>%
+  ggplot(aes(x = min_distance_to_exit_meters)) +
+  xlab("Exit distance (meters)") +
+  geom_histogram() 
+
+exit_distance %>%
+  ggplot(aes(x = log_min_distance_to_exit_meters)) +
+  xlab("Log exit distance (meters)") +
+  geom_histogram() 
+```
+
+## Exit distance - geographic distribution
+```{r,  fig.height = 8}
+ggmap(iowa_map2, extent = 
+        "device") +
+  geom_point(aes(x = lon, y = lat, color = log_min_distance_to_exit_meters), size = 4, 
+             data = exit_distance, alpha = .5) +
+  viridis::scale_color_viridis(direction = -1) +
+  theme_bw()
+```
+
+# Pairwise correlations
+At the city level.
+```{r, fig.height = 10}
+all_dfs <- list(select(n_reviews_by_city, city, log_n_reviews),
+                select(census_data, -lat, -lon, -log_prop_pop_hisp),
+                select(exit_distance, city, log_min_distance_to_exit_meters),
+                select(sentiment_by_city, city, mean_sentiment_score_afinn),
+                select(review_length_by_city, city, log_mean_review_length),
+                select(entropy_by_city, city, mean_entropy_bits))
+
+by_city_df <- reduce(all_dfs, left_join)
+
+count(by_city_df, city) %>%
+  summary()
+
+make_corr_plot(by_city_df[,-1])
+```
+
+# Models
+```{r}
+lm(mean_entropy_bits ~ log_mean_review_length + log_n_reviews + log_pop  + prop_pop_white + median_income + log_min_distance_to_exit_meters, data = by_city_df) %>%
+  summary()
+
+lm(mean_sentiment_score_afinn ~ log_mean_review_length + log_n_reviews +log_pop  + prop_pop_white + median_income + log_min_distance_to_exit_meters, data = by_city_df) %>%
+  summary()
+```
+
+
